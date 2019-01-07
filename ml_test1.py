@@ -17,10 +17,51 @@ pd.options.display.max_rows = 10
 pd.options.display.float_format = '{:.1f}'.format
 
 california_housing_dataframe = pd.read_csv("https://download.mlcc.google.com/mledu-datasets/california_housing_train.csv", sep=",")
-california_housing_dataframe = california_housing_dataframe.reindex(
-    np.random.permutation(california_housing_dataframe.index))
-california_housing_dataframe["median_house_value"] /= 1000.0
+#for previous use
+#california_housing_dataframe = california_housing_dataframe.reindex(np.random.permutation(california_housing_dataframe.index))
+#california_housing_dataframe["median_house_value"] /= 1000.0
 print(california_housing_dataframe.describe())
+
+def preprocess_features(california_housing_dataframe):
+  """Prepares input features from California housing data set.
+
+  Args:
+    california_housing_dataframe: A Pandas DataFrame expected to contain data
+      from the California housing data set.
+  Returns:
+    A DataFrame that contains the features to be used for the model, including
+    synthetic features.
+  """
+  selected_features = california_housing_dataframe[
+    ["latitude",
+     "longitude",
+     "housing_median_age",
+     "total_rooms",
+     "total_bedrooms",
+     "population",
+     "households",
+     "median_income"]]
+  processed_features = selected_features.copy()
+  # Create a synthetic feature.
+  processed_features["rooms_per_person"] = (
+    california_housing_dataframe["total_rooms"] /
+    california_housing_dataframe["population"])
+  return processed_features
+
+def preprocess_targets(california_housing_dataframe):
+  """Prepares target features (i.e., labels) from California housing data set.
+
+  Args:
+    california_housing_dataframe: A Pandas DataFrame expected to contain data
+      from the California housing data set.
+  Returns:
+    A DataFrame that contains the target feature.
+  """
+  output_targets = pd.DataFrame()
+  # Scale the target to be in units of thousands of dollars.
+  output_targets["median_house_value"] = (
+    california_housing_dataframe["median_house_value"] / 1000.0)
+  return output_targets
 
 # Define the input feature: total_rooms.
 #my_feature = california_housing_dataframe[["total_rooms"]]
@@ -196,12 +237,21 @@ def train_model(learning_rate, steps, batch_size, input_feature="total_rooms"):
 
   print("Final RMSE (on training data): %0.2f" % root_mean_squared_error)
 
-california_housing_dataframe["rooms_per_person"] = (california_housing_dataframe["total_rooms"] / california_housing_dataframe["population"])
-california_housing_dataframe["rooms_per_person"] = california_housing_dataframe["rooms_per_person"].apply(lambda x: min(x, 5.5))
+#california_housing_dataframe["rooms_per_person"] = (california_housing_dataframe["total_rooms"] / california_housing_dataframe["population"])
+#california_housing_dataframe["rooms_per_person"] = california_housing_dataframe["rooms_per_person"].apply(lambda x: min(x, 5.5))
 
-train_model(
-    learning_rate=0.05,
-    steps=500,
-    batch_size=5,
-    input_feature="rooms_per_person"
-)
+training_examples = preprocess_features(california_housing_dataframe.head(12000))
+print(training_examples.describe())
+training_targets = preprocess_targets(california_housing_dataframe.head(12000))
+print(training_targets.describe())
+validation_examples = preprocess_features(california_housing_dataframe.tail(5000))
+print(validation_examples.describe())
+validation_targets = preprocess_targets(california_housing_dataframe.tail(5000))
+print(validation_targets.describe())
+
+#train_model(
+#    learning_rate=0.05,
+#    steps=500,
+#    batch_size=5,
+#    input_feature="rooms_per_person"
+#)
