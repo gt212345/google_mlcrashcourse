@@ -18,9 +18,9 @@ pd.options.display.float_format = '{:.1f}'.format
 
 california_housing_dataframe = pd.read_csv("https://download.mlcc.google.com/mledu-datasets/california_housing_train.csv", sep=",")
 #for previous use
-#california_housing_dataframe = california_housing_dataframe.reindex(np.random.permutation(california_housing_dataframe.index))
+california_housing_dataframe = california_housing_dataframe.iloc[np.random.permutation(np.arange(len(california_housing_dataframe)))]
 #california_housing_dataframe["median_house_value"] /= 1000.0
-print(california_housing_dataframe.describe())
+print(california_housing_dataframe)
 
 def preprocess_features(california_housing_dataframe):
   """Prepares input features from California housing data set.
@@ -222,7 +222,6 @@ def train_model(learning_rate, steps, batch_size, input_feature="total_rooms"):
   plt.title("Root Mean Squared Error vs. Periods")
   plt.tight_layout()
   plt.plot(root_mean_squared_errors)
-  #plt.show()
 
   # Output a table with calibration data.
   calibration_data = pd.DataFrame()
@@ -233,7 +232,7 @@ def train_model(learning_rate, steps, batch_size, input_feature="total_rooms"):
   plt.scatter(calibration_data["predictions"], calibration_data["targets"])
   plt.subplot(2, 2, 4)
   _ = california_housing_dataframe["rooms_per_person"].hist()
-  plt.show()
+  #plt.show()
 
   print("Final RMSE (on training data): %0.2f" % root_mean_squared_error)
 
@@ -248,6 +247,34 @@ validation_examples = preprocess_features(california_housing_dataframe.tail(5000
 print(validation_examples.describe())
 validation_targets = preprocess_targets(california_housing_dataframe.tail(5000))
 print(validation_targets.describe())
+
+plt.figure(figsize=(13, 8))
+
+ax = plt.subplot(1, 2, 1)
+ax.set_title("Validation Data")
+
+ax.set_autoscaley_on(False)
+ax.set_ylim([32, 43])
+ax.set_autoscalex_on(False)
+ax.set_xlim([-126, -112])
+plt.scatter(validation_examples["longitude"],
+            validation_examples["latitude"],
+            cmap="coolwarm",
+            c=validation_targets["median_house_value"] / validation_targets["median_house_value"].max())
+
+ax = plt.subplot(1,2,2)
+ax.set_title("Training Data")
+
+ax.set_autoscaley_on(False)
+ax.set_ylim([32, 43])
+ax.set_autoscalex_on(False)
+ax.set_xlim([-126, -112])
+plt.scatter(training_examples["longitude"],
+            training_examples["latitude"],
+            cmap="coolwarm",
+            c=training_targets["median_house_value"] / training_targets["median_house_value"].max())
+_ = plt.plot()
+plt.show()
 
 #train_model(
 #    learning_rate=0.05,
