@@ -17,9 +17,7 @@ pd.options.display.max_rows = 10
 pd.options.display.float_format = '{:.1f}'.format
 
 california_housing_dataframe = pd.read_csv("https://download.mlcc.google.com/mledu-datasets/california_housing_train.csv", sep=",")
-#for previous use
 california_housing_dataframe = california_housing_dataframe.iloc[np.random.permutation(np.arange(len(california_housing_dataframe)))]
-#california_housing_dataframe["median_house_value"] /= 1000.0
 print(california_housing_dataframe)
 
 def preprocess_features(california_housing_dataframe):
@@ -62,6 +60,18 @@ def preprocess_targets(california_housing_dataframe):
   output_targets["median_house_value"] = (
     california_housing_dataframe["median_house_value"] / 1000.0)
   return output_targets
+
+training_examples = preprocess_features(california_housing_dataframe.head(12000))
+training_examples.describe()
+
+training_targets = preprocess_targets(california_housing_dataframe.head(12000))
+training_targets.describe()
+
+validation_examples = preprocess_features(california_housing_dataframe.tail(5000))
+validation_examples.describe()
+
+validation_targets = preprocess_targets(california_housing_dataframe.tail(5000))
+validation_targets.describe()
 
 # Define the input feature: total_rooms.
 #my_feature = california_housing_dataframe[["total_rooms"]]
@@ -133,7 +143,18 @@ def my_input_fn(features, targets, batch_size=1, shuffle=True, num_epochs=None):
 #print("Mean Squared Error (on training data): %0.3f" % mean_squared_error)
 #print("Root Mean Squared Error (on training data): %0.3f" % root_mean_squared_error)
 
-def train_model(learning_rate, steps, batch_size, input_feature="total_rooms"):
+def construct_feature_columns(input_features):
+  """Construct the TensorFlow Feature Columns.
+
+  Args:
+    input_features: The names of the numerical input features to use.
+  Returns:
+    A set of feature columns
+  """ 
+  return set([tf.feature_column.numeric_column(my_feature)
+              for my_feature in input_features])
+
+def train_model(learning_rate, steps, batch_size, training_examples, training_targets, validation_examples, validation_targets):
   """Trains a linear regression model of one feature.
   
   Args:
@@ -147,42 +168,36 @@ def train_model(learning_rate, steps, batch_size, input_feature="total_rooms"):
   
   periods = 10
   steps_per_period = steps / periods
-
-  my_feature = input_feature
-  my_feature_data = california_housing_dataframe[[my_feature]]
-  my_label = "median_house_value"
-  targets = california_housing_dataframe[my_label]
-
-  # Create feature columns.
-  feature_columns = [tf.feature_column.numeric_column(my_feature)]
-  
-  # Create input functions.
-  training_input_fn = lambda:my_input_fn(my_feature_data, targets, batch_size=batch_size)
-  prediction_input_fn = lambda: my_input_fn(my_feature_data, targets, num_epochs=1, shuffle=False)
   
   # Create a linear regressor object.
   my_optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
   my_optimizer = tf.contrib.estimator.clip_gradients_by_norm(my_optimizer, 5.0)
   linear_regressor = tf.estimator.LinearRegressor(
-      feature_columns=feature_columns,
+      feature_columns=construct_feature_columns(training_examples),
       optimizer=my_optimizer
   )
 
+  # Create input functions.
+  training_input_fn = lambda: my_input_fn(training_examples, training_targets["median_house_value"], batch_size=batch_size)
+  predict_training_input_fn = lambda: my_input_fn(training_examples, training_targets["median_house_value"], num_epochs=1, shuffle=False)
+  predict_validation_input_fn = lambda: my_input_fn(validation_examples, validation_targets["median_house_value"], num_epochs=1, shuffle=False)
+
   # Set up to plot the state of our model's line each period.
-  plt.figure(figsize=(15, 6))
-  plt.subplot(2, 2, 1)
-  plt.title("Learned Line by Period")
-  plt.ylabel(my_label)
-  plt.xlabel(my_feature)
-  sample = california_housing_dataframe.sample(n=300)
-  plt.scatter(sample[my_feature], sample[my_label])
-  colors = [cm.coolwarm(x) for x in np.linspace(-1, 1, periods)]
+  #plt.figure(figsize=(15, 6))
+  #plt.subplot(2, 2, 1)
+  #plt.title("Learned Line by Period")
+  #plt.ylabel(my_label)
+  #plt.xlabel(my_feature)
+  #sample = california_housing_dataframe.sample(n=300)
+  #plt.scatter(sample[my_feature], sample[my_label])
+  #colors = [cm.coolwarm(x) for x in np.linspace(-1, 1, periods)]
 
   # Train the model, but do so inside a loop so that we can periodically assess
   # loss metrics.
   print("Training model...")
   print("RMSE (on training data):")
-  root_mean_squared_errors = []
+  training_rmse = []
+  validation_rmse = []
   for period in range (0, periods):
     # Train the model, starting from the prior state.
     linear_regressor.train(
@@ -190,95 +205,43 @@ def train_model(learning_rate, steps, batch_size, input_feature="total_rooms"):
         steps=steps_per_period
     )
     # Take a break and compute predictions.
-    predictions = linear_regressor.predict(input_fn=prediction_input_fn)
-    predictions = np.array([item['predictions'][0] for item in predictions])
+    training_predictions = linear_regressor.predict(input_fn=predict_training_input_fn)
+    training_predictions = np.array([item['predictions'][0] for item in training_predictions])
     
-    # Compute loss.
-    root_mean_squared_error = math.sqrt(
-        metrics.mean_squared_error(predictions, targets))
-    # Occasionally print the current loss.
-    print("  period %02d : %0.2f" % (period, root_mean_squared_error))
-    # Add the loss metrics from this period to our list.
-    root_mean_squared_errors.append(root_mean_squared_error)
-    # Finally, track the weights and biases over time.
-    # Apply some math to ensure that the data and line are plotted neatly.
-    y_extents = np.array([0, sample[my_label].max()])
-    
-    weight = linear_regressor.get_variable_value('linear/linear_model/%s/weights' % input_feature)[0]
-    bias = linear_regressor.get_variable_value('linear/linear_model/bias_weights')
+    validation_predictions = linear_regressor.predict(input_fn=predict_validation_input_fn)
+    validation_predictions = np.array([item['predictions'][0] for item in validation_predictions])
 
-    x_extents = (y_extents - bias) / weight
-    x_extents = np.maximum(np.minimum(x_extents,
-                                      sample[my_feature].max()),
-                           sample[my_feature].min())
-    y_extents = weight * x_extents + bias
-    plt.plot(x_extents, y_extents, color=colors[period]) 
+    #Compute training and validation loss.
+    training_root_mean_squared_error = math.sqrt(
+        metrics.mean_squared_error(training_predictions, training_targets))
+    validation_root_mean_squared_error = math.sqrt(
+        metrics.mean_squared_error(validation_predictions, validation_targets))
+    # Occasionally print the current loss.
+    print("  period %02d : %0.2f" % (period, training_root_mean_squared_error))
+    # Add the loss metrics from this period to our list.
+    training_rmse.append(training_root_mean_squared_error)
+    validation_rmse.append(validation_root_mean_squared_error)
   print("Model training finished.")
 
   # Output a graph of loss metrics over periods.
-  plt.subplot(2, 2, 2)
   plt.ylabel('RMSE')
   plt.xlabel('Periods')
   plt.title("Root Mean Squared Error vs. Periods")
   plt.tight_layout()
-  plt.plot(root_mean_squared_errors)
+  plt.plot(training_rmse, label="training")
+  plt.plot(validation_rmse, label="validation")
+  plt.legend()
+  plt.show()
 
-  # Output a table with calibration data.
-  calibration_data = pd.DataFrame()
-  calibration_data["predictions"] = pd.Series(predictions)
-  calibration_data["targets"] = pd.Series(targets)
-  #calibration_data.describe()
-  plt.subplot(2, 2, 3)
-  plt.scatter(calibration_data["predictions"], calibration_data["targets"])
-  plt.subplot(2, 2, 4)
-  _ = california_housing_dataframe["rooms_per_person"].hist()
-  #plt.show()
+  return linear_regressor
 
-  print("Final RMSE (on training data): %0.2f" % root_mean_squared_error)
 
-#california_housing_dataframe["rooms_per_person"] = (california_housing_dataframe["total_rooms"] / california_housing_dataframe["population"])
-#california_housing_dataframe["rooms_per_person"] = california_housing_dataframe["rooms_per_person"].apply(lambda x: min(x, 5.5))
-
-training_examples = preprocess_features(california_housing_dataframe.head(12000))
-print(training_examples.describe())
-training_targets = preprocess_targets(california_housing_dataframe.head(12000))
-print(training_targets.describe())
-validation_examples = preprocess_features(california_housing_dataframe.tail(5000))
-print(validation_examples.describe())
-validation_targets = preprocess_targets(california_housing_dataframe.tail(5000))
-print(validation_targets.describe())
-
-plt.figure(figsize=(13, 8))
-
-ax = plt.subplot(1, 2, 1)
-ax.set_title("Validation Data")
-
-ax.set_autoscaley_on(False)
-ax.set_ylim([32, 43])
-ax.set_autoscalex_on(False)
-ax.set_xlim([-126, -112])
-plt.scatter(validation_examples["longitude"],
-            validation_examples["latitude"],
-            cmap="coolwarm",
-            c=validation_targets["median_house_value"] / validation_targets["median_house_value"].max())
-
-ax = plt.subplot(1,2,2)
-ax.set_title("Training Data")
-
-ax.set_autoscaley_on(False)
-ax.set_ylim([32, 43])
-ax.set_autoscalex_on(False)
-ax.set_xlim([-126, -112])
-plt.scatter(training_examples["longitude"],
-            training_examples["latitude"],
-            cmap="coolwarm",
-            c=training_targets["median_house_value"] / training_targets["median_house_value"].max())
-_ = plt.plot()
-plt.show()
-
-#train_model(
-#    learning_rate=0.05,
-#    steps=500,
-#    batch_size=5,
-#    input_feature="rooms_per_person"
-#)
+linear_regressor = train_model(
+    learning_rate=0.00003,
+    steps=500,
+    batch_size=5,
+    training_examples = training_examples,
+    training_targets = training_targets,
+    validation_examples = validation_examples,
+    validation_targets = validation_targets
+)
