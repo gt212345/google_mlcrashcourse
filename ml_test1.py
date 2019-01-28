@@ -18,6 +18,7 @@ pd.options.display.float_format = '{:.1f}'.format
 
 california_housing_dataframe = pd.read_csv("https://download.mlcc.google.com/mledu-datasets/california_housing_train.csv", sep=",")
 california_housing_dataframe = california_housing_dataframe.iloc[np.random.permutation(np.arange(len(california_housing_dataframe)))]
+california_housing_test_data = pd.read_csv("https://download.mlcc.google.com/mledu-datasets/california_housing_test.csv", sep=",")
 print(california_housing_dataframe)
 
 def preprocess_features(california_housing_dataframe):
@@ -72,6 +73,9 @@ validation_examples.describe()
 
 validation_targets = preprocess_targets(california_housing_dataframe.tail(5000))
 validation_targets.describe()
+
+test_examples = preprocess_features(california_housing_test_data)
+test_targets = preprocess_targets(california_housing_test_data)
 
 # Define the input feature: total_rooms.
 #my_feature = california_housing_dataframe[["total_rooms"]]
@@ -178,9 +182,19 @@ def train_model(learning_rate, steps, batch_size, training_examples, training_ta
   )
 
   # Create input functions.
-  training_input_fn = lambda: my_input_fn(training_examples, training_targets["median_house_value"], batch_size=batch_size)
-  predict_training_input_fn = lambda: my_input_fn(training_examples, training_targets["median_house_value"], num_epochs=1, shuffle=False)
-  predict_validation_input_fn = lambda: my_input_fn(validation_examples, validation_targets["median_house_value"], num_epochs=1, shuffle=False)
+  training_input_fn = lambda: my_input_fn(
+      training_examples,
+      training_targets["median_house_value"],
+      batch_size=batch_size)
+  predict_training_input_fn = lambda: my_input_fn(
+      training_examples, training_targets["median_house_value"],
+      num_epochs=1,
+      shuffle=False)
+  predict_validation_input_fn = lambda: my_input_fn(
+      validation_examples,
+      validation_targets["median_house_value"],
+      num_epochs=1,
+      shuffle=False)
 
   # Set up to plot the state of our model's line each period.
   #plt.figure(figsize=(15, 6))
@@ -245,3 +259,17 @@ linear_regressor = train_model(
     validation_examples = validation_examples,
     validation_targets = validation_targets
 )
+
+predict_test_input_fn = lambda: my_input_fn(
+      test_examples, 
+      test_targets["median_house_value"], 
+      num_epochs=1, 
+      shuffle=False)
+
+test_predictions = linear_regressor.predict(input_fn=predict_test_input_fn)
+test_predictions = np.array([item['predictions'][0] for item in test_predictions])
+
+root_mean_squared_error = math.sqrt(
+    metrics.mean_squared_error(test_predictions, test_targets))
+
+print("Final RMSE (on test data): %0.2f" % root_mean_squared_error)
